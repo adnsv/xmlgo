@@ -1,0 +1,2 @@
+# xmlgo
+Go XML library
