@@ -2,26 +2,46 @@ package xg
 
 import "fmt"
 
-type TagHandler struct {
-	OnAttr         func(n NameString, v RawString, raw string) error
-	OnStartContent func(raw string) error
-	OnChildSD      func(v RawString, raw string) error
-	OnChildCD      func(v RawString, raw string) error
-	OnChildTag     TagHandlerProc
-	OnClose        func(empty bool, raw string) error
-}
-
-type TagHandlerProc func(n NameString, raw string) (TagHandler, error)
+type FlatHandler func(t *Token) error
+type TokenHandler func(t *Token) (TokenHandler, error)
 
 func mkerr(ec ErrCode) error {
 	return fmt.Errorf("xml syntax error: %s", ec)
 }
 
-func Parse(buf string, onroot TagHandlerProc) error {
-	tt := &tokenizer{buf: buf}
-	tok := tt.Next()
+func ParseFlat(buf string, h FlatHandler) (err error) {
+	tt := tokenizer{buf: buf}
+	t := tt.Next()
 	for {
-		if tok.Kind == OTagToken {
+		if t.Kind == Done {
+			return
+		} else if t.Kind == Err {
+			return mkerr(t.EC)
+		}
+		if h != nil {
+			err = h(t)
+			if err != nil {
+				return
+			}
+		}
+		t = tt.Next()
+	}
+	return
+}
+
+func Parse(buf string, h TokenHandler) (err error) {
+	tt := &tokenizer{buf: buf}
+	for {
+		tok := tt.Next()
+		var th TokenHandler
+		if h != nil {
+			th, err = h(tok)
+			if err != nil {
+				return err
+			}
+		}
+		if tok.Kind == OpenTag {
+
 			break
 		}
 		if tok.IsError() {
@@ -30,9 +50,7 @@ func Parse(buf string, onroot TagHandlerProc) error {
 		if tok.IsDone() {
 			return mkerr(ErrCodeMissingRoot)
 		}
-		tok = tt.Next()
 	}
-	return handleTag(tt, tok, onroot)
 }
 
 func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
@@ -46,9 +64,9 @@ func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
 	}
 
 	t = tt.Next()
-	for t.Kind == AttribToken {
+	for t.Kind == Attrib {
 		if h.OnAttr != nil {
-			err := h.OnAttr(t.Name, t.Str, t.Raw)
+			err := h.OnAttr(t.Name, t.Value, t.Raw)
 			if err != nil {
 				return err
 			}
@@ -66,20 +84,20 @@ func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
 		t = tt.Next()
 		for {
 			switch t.Kind {
-			case SDataToken:
+			case SData:
 				if h.OnChildSD != nil {
-					h.OnChildSD(t.Str, t.Raw)
+					h.OnChildSD(t.Value, t.Raw)
 				}
-			case CDataToken:
+			case CData:
 				if h.OnChildCD != nil {
-					h.OnChildCD(t.Str, t.Raw)
+					h.OnChildCD(t.Value, t.Raw)
 				}
-			case OTagToken:
+			case OpenTag:
 				err = handleTag(tt, t, h.OnChildTag)
 				if err != nil {
 					return err
 				}
-			case CTagToken:
+			case CloseTag:
 				if h.OnClose != nil {
 					err := h.OnClose(false, t.Raw)
 					if err != nil {
@@ -87,9 +105,9 @@ func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
 					}
 				}
 				return nil
-			case ErrToken:
+			case Err:
 				return mkerr(t.EC)
-			case DoneToken:
+			case Done:
 				return mkerr(ErrCodeUnexpectedEOF)
 			default:
 				return mkerr(ErrCodeUnexpectedContent)
@@ -97,7 +115,7 @@ func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
 			t = tt.Next()
 		}
 
-	} else if t.Kind == ETagToken {
+	} else if t.Kind == CloseEmptyTag {
 		// done with this node
 		if h.OnClose != nil {
 			h.OnClose(true, t.Raw)

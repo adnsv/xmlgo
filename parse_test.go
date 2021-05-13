@@ -2,6 +2,7 @@ package xg
 
 import (
 	"fmt"
+	"log"
 	"testing"
 )
 
@@ -11,46 +12,52 @@ func TestParse(t *testing.T) {
 }
 
 func ShowTokens(buf string) {
-	tt := tokenizer{buf: buf}
-	for {
-		t := tt.Next()
+	err := ParseFlat(buf, func(t *Token) error {
 		switch t.Kind {
-		case StartToken:
-			fmt.Printf("SOF\n")
-		case DoneToken:
+		case Done:
 			fmt.Printf("\n[EOF]\n")
-			return
-		case ErrToken:
+			return nil
+		case Err:
 			fmt.Printf("\nERR: %s\n", t.EC.String())
-			return
-		case XmlDeclToken:
+			return e
+		case XmlDecl:
 			fmt.Printf("XMLDECL[%s]", t.Raw)
-		case OTagToken:
+		case OpenTag:
 			fmt.Printf("%s<TAG:%s", t.WhitePrefix, t.Name)
 		case ChildrenToken:
 			fmt.Printf("[")
-		case ETagToken:
+		case CloseEmptyTag:
 			fmt.Printf(">")
-		case CTagToken:
+		case CloseTag:
 			fmt.Printf("]>")
-		case AttribToken:
-			fmt.Printf(" %s=%s", t.Name, t.Str)
-		case SDataToken:
-			fmt.Printf("%s", t.Str)
-		case CDataToken:
-			fmt.Printf("<CDATA:[%s]>", t.Str)
-		case CommentToken:
-			fmt.Printf("%s<COMMENT:%s>", t.WhitePrefix, t.Str)
+		case Attrib:
+			fmt.Printf(" %s=%s", t.Name, t.Value)
+		case SData:
+			fmt.Printf("%s", t.Value)
+		case CData:
+			fmt.Printf("<CDATA:[%s]>", t.Value)
+		case Comment:
+			fmt.Printf("%s<COMMENT:%s>", t.WhitePrefix, t.Value)
 		}
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
-
 }
 
 func ParseExample() {
 	Parse(exampleXML, tagPrinter)
 }
 
-func tagPrinter(tag NameString, raw string) (TagHandler, error) {
+func tagPrinter(t *Token) (ch TokenHandler, err error) {
+	switch t.Kind {
+	case OpenTag:
+		fmt.Printf("<%s", t.Name)
+		return tagPrinter, nil
+		case 
+	}
+
 	fmt.Printf("<%s", tag)
 	h := TagHandler{}
 	h.OnAttr = func(n NameString, v RawString, raw string) error {

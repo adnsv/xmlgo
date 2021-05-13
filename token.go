@@ -60,18 +60,18 @@ func (ec ErrCode) Failed() bool {
 type TokenKind int
 
 const (
-	StartToken = TokenKind(iota)
-	DoneToken
-	ErrToken
-	XmlDeclToken
-	OTagToken     // <identifier
+	startOfFile = TokenKind(iota)
+	Done
+	Err
+	XmlDecl
+	OpenTag       // <identifier
 	ChildrenToken // >
-	ETagToken     // />
-	CTagToken     // </identifier>
-	AttribToken   // identifier="qstring" or identifier='qstring'
-	SDataToken    // content string data
-	CDataToken    // cdata tag content
-	CommentToken  // <!-- comment -->
+	CloseEmptyTag // />
+	CloseTag      // </identifier>
+	Attrib        // identifier="qstring" or identifier='qstring'
+	SData         // content string data
+	CData         // cdata tag content
+	Comment       // <!-- comment -->
 )
 
 type NameString string
@@ -86,18 +86,18 @@ type Token struct {
 	Kind        TokenKind
 	EC          ErrCode
 	Name        NameString
-	Str         RawString
+	Value       RawString
 	WhitePrefix string
 	Raw         string
 	SrcPos      int
 }
 
 func (t *Token) IsError() bool {
-	return t.Kind == ErrToken
+	return t.Kind == Err
 }
 
 func (t *Token) IsDone() bool {
-	return t.Kind == DoneToken
+	return t.Kind == Done
 }
 
 type tokenizerState int
@@ -130,9 +130,9 @@ func (tt *tokenizer) Next() *Token {
 			ec = ErrCodeUnexpectedEOF
 		}
 		return &Token{
-			Kind:        ErrToken,
+			Kind:        Err,
 			Name:        "",
-			Str:         "",
+			Value:       "",
 			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
 			Raw:         tt.buf[tokenSrcPos:tt.cur],
 			SrcPos:      tokenSrcPos,
@@ -143,7 +143,7 @@ func (tt *tokenizer) Next() *Token {
 		return &Token{
 			Kind:        k,
 			Name:        n,
-			Str:         v,
+			Value:       v,
 			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
 			Raw:         tt.buf[tokenSrcPos:tt.cur],
 			SrcPos:      tokenSrcPos,
@@ -152,7 +152,7 @@ func (tt *tokenizer) Next() *Token {
 
 	if tokenAtEOF {
 		if tt.state == tsEpilog {
-			return mktoken(DoneToken, "", "")
+			return mktoken(Done, "", "")
 		}
 		return mkerr(ErrCodeUnexpectedEOF)
 	}
@@ -201,7 +201,7 @@ func (tt *tokenizer) Next() *Token {
 			} else {
 				tt.state = tsContent
 			}
-			return mktoken(ETagToken, "", "")
+			return mktoken(CloseEmptyTag, "", "")
 		}
 		if tt.skipByte('>') {
 			tt.state = tsContent
@@ -211,7 +211,7 @@ func (tt *tokenizer) Next() *Token {
 		if e != ErrCodeOk {
 			return mkerr(e)
 		}
-		return mktoken(AttribToken, n, v)
+		return mktoken(Attrib, n, v)
 	}
 
 	handleComment := func() (iscomment bool, tk *Token, ec ErrCode) {
@@ -233,7 +233,7 @@ func (tt *tokenizer) Next() *Token {
 			ec = ErrInvalidComment
 			return
 		}
-		tk = mktoken(CommentToken, "", RawString(tt.buf[o:tt.cur-3]))
+		tk = mktoken(Comment, "", RawString(tt.buf[o:tt.cur-3]))
 		return
 	}
 
@@ -271,7 +271,7 @@ func (tt *tokenizer) Next() *Token {
 				return mkerr(ErrCodeInvalidXmlDecl)
 			}
 			tt.state = tsProlog
-			return mktoken(XmlDeclToken, "", v)
+			return mktoken(XmlDecl, "", v)
 		}
 		tt.state = tsProlog
 	}
@@ -295,7 +295,7 @@ func (tt *tokenizer) Next() *Token {
 		}
 		tt.stack = append(tt.stack, n)
 		tt.state = tsAttribs
-		return mktoken(OTagToken, n, "")
+		return mktoken(OpenTag, n, "")
 	}
 
 	if tt.state == tsEpilog {
@@ -315,7 +315,7 @@ func (tt *tokenizer) Next() *Token {
 	if n > 0 {
 		o := tt.cur
 		tt.cur += n
-		return mktoken(SDataToken, "", RawString(tt.buf[o:tt.cur]))
+		return mktoken(SData, "", RawString(tt.buf[o:tt.cur]))
 	}
 
 	tt.cur++ // skip over the '<'
@@ -329,7 +329,7 @@ func (tt *tokenizer) Next() *Token {
 		}
 		o := tt.cur
 		tt.cur += n + 3
-		return mktoken(CDataToken, "", RawString(tt.buf[o:tt.cur-3]))
+		return mktoken(CData, "", RawString(tt.buf[o:tt.cur-3]))
 	}
 	if tt.skipByte('/') {
 		// closing tag
@@ -354,7 +354,7 @@ func (tt *tokenizer) Next() *Token {
 		} else {
 			tt.state = tsContent
 		}
-		return mktoken(CTagToken, cname, "")
+		return mktoken(CloseTag, cname, "")
 	}
 	oname := tt.readName()
 	if len(oname) == 0 {
@@ -362,7 +362,7 @@ func (tt *tokenizer) Next() *Token {
 	}
 	tt.stack = append(tt.stack, oname)
 	tt.state = tsAttribs
-	return mktoken(OTagToken, oname, "")
+	return mktoken(OpenTag, oname, "")
 }
 
 func (tt *tokenizer) readName() NameString {
