@@ -3,13 +3,67 @@ package xg
 import (
 	"fmt"
 	"log"
-	"strings"
 	"testing"
 )
 
 func TestParse(t *testing.T) {
 	//ShowTokens(example2)
-	ParseExample(example2)
+	ParseExample(example01)
+}
+
+func ParseExample(buf string) {
+	cc := Open(buf)
+	if cc.NextTag() {
+		fmt.Printf("root: %s", cc.Name())
+		cc.HandleTag(func(attrs AttributeList, content *ContentIterator) error {
+			for _, a := range attrs {
+				fmt.Printf(" %s=%s", a.Name, a.Value)
+			}
+			handleContent(content)
+			return nil
+		})
+		fmt.Printf("\ndone\n")
+	}
+}
+
+func handleContent(content *ContentIterator) {
+	for content.Next() {
+		switch content.Kind() {
+		case XmlDecl:
+			fmt.Printf(`<?xml version="1.0" encoding="UTF-8"?>`)
+		case OpenTag:
+			n := content.Name()
+			if n == "id" || n == "caption" {
+				v := content.ChildStringContent()
+				fmt.Printf("- %s=%s", n, v)
+				continue
+			}
+			fmt.Printf("<%s", n)
+			content.HandleTag(func(attrs AttributeList, chilcontent *ContentIterator) error {
+				for _, a := range attrs {
+					fmt.Printf(" %s=%s", a.Name, a.Value)
+				}
+				if content == nil {
+					fmt.Printf("/>")
+				} else {
+					fmt.Print(">")
+					handleContent(chilcontent)
+					fmt.Printf("</%s>", n)
+				}
+				return nil
+			})
+		case SData:
+			fmt.Printf("%s", content.Value())
+		case CData:
+			fmt.Printf("<![CDATA[%s]]>", content.Value())
+		case Comment:
+			fmt.Printf("<!--%s-->", content.Value())
+		case PI:
+			fmt.Printf("<?%s %s?>", content.Name(), content.Value())
+		default:
+			fmt.Printf("<unknown>")
+		}
+	}
 }
 
 func ShowTokens(buf string) {
@@ -39,7 +93,7 @@ func ShowTokens(buf string) {
 		case Comment:
 			fmt.Printf("%s<COMMENT:%s>", t.WhitePrefix, t.Value)
 		case PI:
-			fmt.Printf("%s<PI:%s>", t.WhitePrefix, t.Value)
+			fmt.Printf("%s<PI:%s %s>", t.WhitePrefix, t.Name, t.Value)
 		}
 		return nil
 	})
@@ -49,55 +103,7 @@ func ShowTokens(buf string) {
 	}
 }
 
-func ParseExample(buf string) {
-	err := Parse(example2, tagPrinter, contentPrinter)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func contentPrinter(t *Token) error {
-	fmt.Printf("%s%s", t.WhitePrefix, t.Raw)
-	return nil
-}
-
-func tagPrinter(tag *Token, attrs AttributeList, content *ContentIterator) error {
-	n := strings.ToUpper(string(tag.Name))
-	fmt.Printf("<%s", n)
-	for _, a := range attrs {
-		fmt.Printf(" %s=%q", a.Name, a.Value.Unscrambled())
-	}
-	if content == nil {
-		fmt.Printf("/>")
-		return nil
-	}
-
-	fmt.Printf(">")
-	for content.Next() {
-		switch content.Kind() {
-		case XmlDecl:
-			fmt.Printf(`<?xml version="1.0" encoding="UTF-8"?>`)
-		case OpenTag:
-			fmt.Printf("<%s ... />", content.Name())
-		case SData:
-			fmt.Printf("%s", content.Value())
-		case CData:
-			fmt.Printf("<![CDATA[%s]]>", content.Value())
-		case Comment:
-			fmt.Printf("<!--%s-->", content.Value())
-		case PI:
-			fmt.Printf("<?%s %s?>", content.Name(), content.Value())
-		default:
-			fmt.Printf("<unknown>")
-		}
-	}
-
-	fmt.Printf("</%s>", n)
-
-	return nil
-}
-
-const example1 = `<?xml version="1.0" encoding="UTF-8"?>
+const example01 = `<?xml version="1.0" encoding="UTF-8"?>
 <!--comment-->
 <root attr="val" attr2='val2'>
   <Reason>
@@ -160,7 +166,7 @@ const example1 = `<?xml version="1.0" encoding="UTF-8"?>
   </Category>
 </root>
 `
-const example2 = `<?xml version="1.0" encoding="UTF-8"?>
+const example02 = `<?xml version="1.0" encoding="UTF-8"?>
 <DocumentElement param="value">
 	<!-- comment -->
 	<FirstElement>

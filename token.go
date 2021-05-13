@@ -87,8 +87,8 @@ const (
 	Err
 	XmlDecl
 	OpenTag       // <identifier
-	StartContent  // >
 	CloseEmptyTag // />
+	StartContent  // >
 	EndContent    // </identifier>
 	Attrib        // identifier="qstring" or identifier='qstring'
 	SData         // content string data
@@ -96,6 +96,37 @@ const (
 	Comment       // <!-- comment -->
 	PI            // <?name value?>
 )
+
+func (t TokenKind) String() string {
+	switch t {
+	case startOfFile:
+		return "SOF"
+	case Done:
+		return "EOF"
+	case XmlDecl:
+		return "XmlDecl"
+	case OpenTag:
+		return "OpenTag"
+	case StartContent:
+		return "StartContent"
+	case EndContent:
+		return "EndContent"
+	case CloseEmptyTag:
+		return "CloseEmptyTag"
+	case Attrib:
+		return "Attrib"
+	case SData:
+		return "SData"
+	case CData:
+		return "CData"
+	case Comment:
+		return "Comment"
+	case PI:
+		return "PI"
+	default:
+		return "UNKNOWN_TOKEN"
+	}
+}
 
 type NameString string
 
@@ -297,7 +328,7 @@ func (tt *tokenizer) Next() *Token {
 			return mkerr(ErrUnterminatedPI)
 		}
 		tt.cur += n + 2
-		return mktoken(PI, "", RawString(tt.buf[o:tt.cur-2]))
+		return mktoken(PI, name, RawString(tt.buf[o:tt.cur-2]))
 	}
 
 	if tt.state == tsProlog {
