@@ -1,6 +1,9 @@
 package xg
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 func ParseTokens(buf string, ontoken func(t *Token) error) error {
 	tt := tokenizer{buf: buf}
@@ -23,10 +26,19 @@ func ParseTokens(buf string, ontoken func(t *Token) error) error {
 
 type AttributeList []*Token
 
-type ContentHandler = func(t *Token) error
-type TagHandler func(tag *Token, attrs AttributeList, content *ContentIterator) error
+func (aa AttributeList) Attr(name string) (string, bool) {
+	for _, a := range aa {
+		if string(a.Name) == name {
+			return a.Value.Unscrambled(), true
+		}
+	}
+	return "", false
+}
 
-type ContentIterator struct {
+type ContentHandler = func(t *Token) error
+type TagHandler func(tag *Token, attrs AttributeList, content *Content) error
+
+type Content struct {
 	tt       *tokenizer
 	t        *Token
 	err      error
@@ -36,11 +48,11 @@ type ContentIterator struct {
 
 var ErrNoMoreContent = errors.New("no more content available")
 
-func (ci *ContentIterator) Err() error {
+func (ci *Content) Err() error {
 	return ci.err
 }
 
-func (ci *ContentIterator) Next() bool {
+func (ci *Content) Next() bool {
 	if ci == nil || ci.finished || ci.err != nil {
 		return false
 	}
@@ -65,7 +77,7 @@ func (ci *ContentIterator) Next() bool {
 		return false
 	case EOF:
 		return false
-	case XmlDecl, Tag, SData, CData, Comment, PI:
+	case XmlDecl, DocTypeDecl, Tag, SData, CData, Comment, PI:
 		return true
 	default:
 		ci.t = nil
@@ -74,7 +86,7 @@ func (ci *ContentIterator) Next() bool {
 	panic("unexpected token " + ci.t.Kind.String())
 }
 
-func (ci *ContentIterator) NextTag() bool {
+func (ci *Content) NextTag() bool {
 	for {
 		ok := ci.Next()
 		if !ok {
@@ -86,49 +98,56 @@ func (ci *ContentIterator) NextTag() bool {
 	}
 }
 
-func (ci *ContentIterator) Kind() TokenKind {
+func (ci *Content) Kind() TokenKind {
 	if ci.t != nil {
 		return ci.t.Kind
 	}
 	return Err
 }
-func (ci *ContentIterator) Name() NameString {
+func (ci *Content) Name() NameString {
 	if ci == nil || ci.t == nil {
 		return ""
 	}
 	return ci.t.Name
 }
-func (ci *ContentIterator) Value() RawString {
+func (ci *Content) Value() RawString {
 	if ci == nil || ci.t == nil {
 		return ""
 	}
 	return ci.t.Value
 }
-func (ci *ContentIterator) Raw() (whitePrefix, tokenStr string) {
+func (ci *Content) Raw() (whitePrefix, tokenStr string) {
 	if ci == nil || ci.t == nil {
 		return "", ""
 	}
 	return ci.t.WhitePrefix, ci.t.Raw
 }
-func (ci *ContentIterator) IsXmlDecl() bool {
+func (ci *Content) IsXmlDecl() bool {
 	return ci.t != nil && ci.t.Kind == XmlDecl
 }
-func (ci *ContentIterator) IsTag() bool {
+func (ci *Content) IsTag() bool {
 	return ci.t != nil && ci.t.Kind == Tag
 }
-func (ci *ContentIterator) IsSData() bool {
+func (ci *Content) IsSData() bool {
 	return ci.t != nil && ci.t.Kind == SData
 }
-func (ci *ContentIterator) IsCData() bool {
+func (ci *Content) IsCData() bool {
 	return ci.t != nil && ci.t.Kind == CData
 }
-func (ci *ContentIterator) IsComment() bool {
+func (ci *Content) IsComment() bool {
 	return ci.t != nil && ci.t.Kind == Comment
 }
-func (ci *ContentIterator) IsPI() bool {
+func (ci *Content) IsPI() bool {
 	return ci.t != nil && ci.t.Kind == PI
 }
-func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content *ContentIterator) error) {
+func (ci *Content) MakeError(prefix, msg string) error {
+	line, pos := CalcLocation(ci.tt.buf, ci.tt.cur)
+	if prefix == "" {
+		prefix = "xml parser"
+	}
+	return fmt.Errorf("%s [%d:%d]: %s", prefix, line+1, pos+1, msg)
+}
+func (ci *Content) HandleTag(callback func(attrs AttributeList, content *Content) error) {
 	if ci == nil || ci.t == nil || ci.t.Kind != Tag {
 		return
 	}
@@ -170,7 +189,7 @@ func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content 
 	defer func() { ci.locked = false; ci.t = nil }()
 
 	if t.Kind == BeginContent {
-		content := &ContentIterator{tt: ci.tt}
+		content := &Content{tt: ci.tt}
 		err := callback(attrs, content)
 		if err != nil {
 			ci.err = err
@@ -214,7 +233,7 @@ func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content 
 //
 // This is useful for parsing <tag>string-content</tag> nodes
 //
-func (ci *ContentIterator) ChildStringContent() RawString {
+func (ci *Content) ChildStringContent() RawString {
 	if ci == nil || ci.t == nil || ci.t.Kind != Tag {
 		return ""
 	}
@@ -273,8 +292,8 @@ func (ci *ContentIterator) ChildStringContent() RawString {
 	panic("unexpected token " + t.Kind.String())
 }
 
-func Open(buf string) *ContentIterator {
-	return &ContentIterator{tt: &tokenizer{buf: buf}}
+func Open(buf string) *Content {
+	return &Content{tt: &tokenizer{buf: buf}}
 }
 
 func skipTag(tt *tokenizer) error {

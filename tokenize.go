@@ -9,6 +9,7 @@ type ErrCode int
 
 const (
 	ErrCodeOk = ErrCode(iota)
+	ErrCustom
 	ErrCodeUnexpectedEOF
 	ErrCodeUnexpectedContent
 	ErrCodeUnterminatedQStr
@@ -29,6 +30,7 @@ const (
 
 var ecstr = map[ErrCode]string{
 	ErrCodeOk:                 "no error",
+	ErrCustom:                 "custom error",
 	ErrCodeUnexpectedEOF:      "unexpected end of file",
 	ErrCodeUnexpectedContent:  "unexpected content",
 	ErrCodeUnterminatedQStr:   "unterminated string",
@@ -86,6 +88,7 @@ const (
 	EOF                             // end of file (buffer)
 	Err                             // error
 	XmlDecl                         // <?xml version="1.0" encoding="UTF-8"?>
+	DocTypeDecl                     // <!DOCTYPE ... >
 	Tag                             // <identifier
 	CloseEmptyTag                   // />
 	BeginContent                    // >
@@ -105,6 +108,8 @@ func (t TokenKind) String() string {
 		return "EOF"
 	case XmlDecl:
 		return "XmlDecl"
+	case DocTypeDecl:
+		return "DocTypeDecl"
 	case Tag:
 		return "Tag"
 	case BeginContent:
@@ -213,40 +218,6 @@ func (tt *tokenizer) Next() *Token {
 		return mkerr(ErrCodeUnexpectedEOF)
 	}
 
-	readAttrPair := func() (name NameString, value RawString, ec ErrCode) {
-		name = tt.readName()
-		if len(name) == 0 {
-			ec = ErrCodeExpectedAttrName
-			return
-		}
-		tt.skipWhite()
-		if !tt.skipByte('=') {
-			ec = ErrCodeExpectedEQ
-			return
-		}
-		tt.skipWhite()
-		if tt.cur >= len(tt.buf) {
-			ec = ErrCodeExpectedQStr
-			return
-		}
-		term := tt.buf[tt.cur]
-		if term != '\'' && term != '"' {
-			ec = ErrCodeExpectedQStr
-			return
-		}
-		n := strings.IndexByte(tt.buf[tt.cur+1:], term)
-		er := strings.IndexAny(tt.buf[tt.cur+1:], "\r")
-		en := strings.IndexAny(tt.buf[tt.cur+1:], "\n")
-
-		if n < 0 || (er > 0 && n > er) || (en > 0 && n > en) {
-			ec = ErrCodeUnterminatedQStr
-			return
-		}
-		value = RawString(tt.buf[tt.cur+1 : tt.cur+1+n])
-		tt.cur += n + 2
-		return
-	}
-
 	if tt.state == stateAttribs {
 		if tt.skipStr("/>") {
 			if len(tt.stack) > 0 {
@@ -263,9 +234,9 @@ func (tt *tokenizer) Next() *Token {
 			tt.state = stateContent
 			return mktoken(BeginContent, "", "")
 		}
-		n, v, e := readAttrPair()
-		if e != ErrCodeOk {
-			return mkerr(e)
+		n, v, ec := tt.readAttrPair()
+		if ec != ErrCodeOk {
+			return mkerr(ec)
 		}
 		return mktoken(Attrib, n, v)
 	}
@@ -278,15 +249,15 @@ func (tt *tokenizer) Next() *Token {
 		if tt.skipStr("<?xml") {
 			// xmlspec:XMLDecl
 			tt.skipWhite()
-			n, v, e := readAttrPair()
-			if e == ErrCodeOk && n == "version" {
+			n, v, ec := tt.readAttrPair()
+			if ec == ErrCodeOk && n == "version" {
 				// xmlspec:VersionInfo
 				// ignore actual version number, should be '1.0' or '1.1'
 				tt.skipWhite()
-				n, v, e = readAttrPair()
+				n, v, ec = tt.readAttrPair()
 			}
-			if e != ErrCodeOk {
-				return mkerr(e)
+			if ec != ErrCodeOk {
+				return mkerr(ec)
 			}
 			if n != "encoding" {
 				return mkerr(ErrCodeInvalidXmlDecl)
@@ -302,33 +273,20 @@ func (tt *tokenizer) Next() *Token {
 	}
 
 	if tt.skipStr("<!--") {
-		// comment
-		o := tt.cur
-		n := strings.Index(tt.buf[tt.cur:], "--")
-		if n < 0 {
-			return mkerr(ErrUnterminatedComment)
+		s, ec := tt.readComment()
+		if ec != ErrCodeOk {
+			return mkerr(ec)
 		}
-		tt.cur += n + 2
-		if !tt.skipByte('>') {
-			return mkerr(ErrInvalidComment)
-		}
-		return mktoken(Comment, "", RawString(tt.buf[o:tt.cur-3]))
+		return mktoken(Comment, "", RawString(s))
 	}
 
 	if tt.skipStr("<?") {
 		// processing instruction
-		name := tt.readName()
-		if len(name) == 0 {
-			return mkerr(ErrCodeUnexpectedContent)
+		n, c, ec := tt.readPI()
+		if ec != ErrCodeOk {
+			return mkerr(ec)
 		}
-		tt.skipWhite()
-		o := tt.cur
-		n := strings.Index(tt.buf[tt.cur:], "?>")
-		if n < 0 {
-			return mkerr(ErrUnterminatedPI)
-		}
-		tt.cur += n + 2
-		return mktoken(PI, name, RawString(tt.buf[o:tt.cur-2]))
+		return mktoken(PI, n, RawString(c))
 	}
 
 	if tt.state == stateProlog {
@@ -336,8 +294,15 @@ func (tt *tokenizer) Next() *Token {
 			return mkerr(ErrCodeUnexpectedContent)
 		}
 		if tt.skipStr("!DOCTYPE") {
+			if tt.state != stateProlog {
+				return mkerr(ErrCodeUnexpectedContent)
+			}
 			// todo: implement doctype parsing or skipping
-			return mkerr(ErrCodeUnsupportedFeature)
+			n, s, ec := tt.readDocTypeDecl()
+			if ec != ErrCodeOk {
+				return mkerr(ec)
+			}
+			return mktoken(DocTypeDecl, n, RawString(s))
 		}
 		// open-tag token
 		n := tt.readName()
@@ -350,7 +315,6 @@ func (tt *tokenizer) Next() *Token {
 	}
 
 	if tt.state == stateEpilog {
-
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 
@@ -420,9 +384,145 @@ func (tt *tokenizer) readName() NameString {
 	return NameString(tt.buf[o:tt.cur])
 }
 
-func (tt *tokenizer) skipWhite() {
+func (tt *tokenizer) readComment() (string, ErrCode) {
+	// comment
+	o := tt.cur
+	n := strings.Index(tt.buf[tt.cur:], "--")
+	if n < 0 {
+		return "", ErrUnterminatedComment
+	}
+	tt.cur += n + 2
+	if !tt.skipByte('>') {
+		return "", ErrInvalidComment
+	}
+	return tt.buf[o : tt.cur-3], ErrCodeOk
+}
+
+func (tt *tokenizer) readPI() (name NameString, content string, ec ErrCode) {
+	name = tt.readName()
+	if len(name) == 0 {
+		ec = ErrCodeUnexpectedContent
+		return
+	}
+	tt.skipWhite()
+	o := tt.cur
+	n := strings.Index(tt.buf[tt.cur:], "?>")
+	if n < 0 {
+		ec = ErrUnterminatedPI
+		return
+	}
+	tt.cur += n + 2
+	content = tt.buf[o : tt.cur-2]
+	return
+}
+
+func (tt *tokenizer) readQStr() (s string, ec ErrCode) {
+	if tt.cur >= len(tt.buf) {
+		ec = ErrCodeExpectedQStr
+		return
+	}
+	quote := tt.buf[tt.cur]
+	if quote != '\'' && quote != '"' {
+		ec = ErrCodeExpectedQStr
+		return
+	}
+	n := strings.IndexByte(tt.buf[tt.cur+1:], quote)
+
+	if n < 0 {
+		ec = ErrCodeUnterminatedQStr
+		return
+	}
+
+	s = tt.buf[tt.cur+1 : tt.cur+1+n]
+	tt.cur += n + 2
+	return
+}
+
+func (tt *tokenizer) readAttrPair() (name NameString, value RawString, ec ErrCode) {
+	name = tt.readName()
+	if len(name) == 0 {
+		ec = ErrCodeExpectedAttrName
+		return
+	}
+	tt.skipWhite()
+	if !tt.skipByte('=') {
+		ec = ErrCodeExpectedEQ
+		return
+	}
+	tt.skipWhite()
+	if tt.cur >= len(tt.buf) {
+		ec = ErrCodeExpectedQStr
+		return
+	}
+	var s string
+	s, ec = tt.readQStr()
+	value = RawString(s)
+	return
+}
+
+func (tt *tokenizer) readDocTypeDecl() (name NameString, content string, ec ErrCode) {
+	if !tt.skipWhite() {
+		ec = ErrCodeUnexpectedContent
+		return
+	}
+	name = tt.readName()
+	if len(name) == 0 {
+		ec = ErrCodeUnexpectedContent
+		return
+	}
+	end := len(tt.buf)
+
+	if tt.skipWhite() {
+		o := tt.cur
+		quote := uint8(0)
+		depth := 0 // we already had an opening '<' inside "<!DOCTYPE" prefix
+		// skip over the entire thing counting opening and closing brackets,
+		// ignore those inside comments and quoted strings
+		for {
+			if tt.cur >= end {
+				ec = ErrCodeUnexpectedEOF
+				return
+			}
+			b := tt.buf[tt.cur]
+			tt.cur++
+
+			if quote == 0 && b == '>' && depth == 0 {
+				content = tt.buf[o : tt.cur-1]
+				return
+			}
+
+			switch {
+			case b == quote:
+				quote = 0
+			case quote != 0: // keep going
+			case b == '\'' || b == '"':
+				quote = b
+			case b == '>' && quote == 0:
+				depth--
+			case b == '<' && quote == 0:
+				if tt.skipStr("!--") {
+					_, ec = tt.readComment()
+					if ec != ErrCodeOk {
+						return
+					}
+				} else {
+					depth++
+				}
+			}
+		}
+	} else if tt.skipByte('>') {
+		return
+	}
+
+	ec = ErrCodeUnexpectedContent
+	return
+}
+
+func (tt *tokenizer) skipWhite() bool {
+	o := tt.cur
 	for ; tt.cur < len(tt.buf) && isWhite(tt.buf[tt.cur]); tt.cur++ {
 	}
+	return tt.cur > o
 }
 
 func (tt *tokenizer) skipByte(c byte) bool {

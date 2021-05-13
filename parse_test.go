@@ -15,7 +15,7 @@ func ParseExample(buf string) {
 	cc := Open(buf)
 	if cc.NextTag() {
 		fmt.Printf("root: %s", cc.Name())
-		cc.HandleTag(func(attrs AttributeList, content *ContentIterator) error {
+		cc.HandleTag(func(attrs AttributeList, content *Content) error {
 			for _, a := range attrs {
 				fmt.Printf(" %s=%s", a.Name, a.Value)
 			}
@@ -26,7 +26,7 @@ func ParseExample(buf string) {
 	}
 }
 
-func handleContent(content *ContentIterator) {
+func handleContent(content *Content) {
 	for content.Next() {
 		switch content.Kind() {
 		case XmlDecl:
@@ -39,7 +39,7 @@ func handleContent(content *ContentIterator) {
 				continue
 			}
 			fmt.Printf("<%s", n)
-			content.HandleTag(func(attrs AttributeList, chilcontent *ContentIterator) error {
+			content.HandleTag(func(attrs AttributeList, chilcontent *Content) error {
 				for _, a := range attrs {
 					fmt.Printf(" %s=%s", a.Name, a.Value)
 				}

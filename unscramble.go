@@ -44,27 +44,35 @@ func extractcp(s string) (cp rune, n int) {
 }
 
 func unscramble(s string) string {
-	i := strings.IndexByte(s, '&')
+	i := strings.IndexAny(s, "&\r")
 	if i < 0 {
 		return s
 	}
 	r := s[:i]
 	s = s[i:]
 	for {
-		i := strings.IndexByte(s, '&')
+		i := strings.IndexAny(s, "&\r")
 		if i < 0 {
 			r += s
 			break
 		}
+		c := s[i]
 		r += s[:i]
 		s = s[i+1:]
-
-		cp, n := extractcp(s)
-		if n == 0 {
-			r += "&"
+		if c == '&' {
+			cp, n := extractcp(s)
+			if n == 0 {
+				r += "&"
+			} else {
+				r += string(cp)
+				s = s[n:]
+			}
 		} else {
-			r += string(cp)
-			s = s[n:]
+			// normalize \r && \r\n -> \n
+			r += "\n"
+			if len(s) > 0 && s[0] == '\n' {
+				s = s[1:]
+			}
 		}
 	}
 	return r
