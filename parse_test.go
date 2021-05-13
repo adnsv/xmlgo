@@ -31,7 +31,7 @@ func handleContent(content *ContentIterator) {
 		switch content.Kind() {
 		case XmlDecl:
 			fmt.Printf(`<?xml version="1.0" encoding="UTF-8"?>`)
-		case OpenTag:
+		case Tag:
 			n := content.Name()
 			if n == "id" || n == "caption" {
 				v := content.ChildStringContent()
@@ -69,16 +69,16 @@ func handleContent(content *ContentIterator) {
 func ShowTokens(buf string) {
 	err := ParseTokens(buf, func(t *Token) error {
 		switch t.Kind {
-		case Done:
+		case EOF:
 			fmt.Printf("\n[EOF]\n")
 			return nil
 		case Err:
 			return t.Error
 		case XmlDecl:
 			fmt.Printf("XMLDECL[%s]", t.Raw)
-		case OpenTag:
+		case Tag:
 			fmt.Printf("%s<TAG:%s", t.WhitePrefix, t.Name)
-		case StartContent:
+		case BeginContent:
 			fmt.Printf("[")
 		case CloseEmptyTag:
 			fmt.Printf(">")

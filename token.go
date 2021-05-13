@@ -82,33 +82,33 @@ func NewError(ec ErrCode, buf string, offset int) error {
 type TokenKind int
 
 const (
-	startOfFile = TokenKind(iota)
-	Done
-	Err
-	XmlDecl
-	OpenTag       // <identifier
-	CloseEmptyTag // />
-	StartContent  // >
-	EndContent    // </identifier>
-	Attrib        // identifier="qstring" or identifier='qstring'
-	SData         // content string data
-	CData         // cdata tag content
-	Comment       // <!-- comment -->
-	PI            // <?name value?>
+	sof           = TokenKind(iota) // start of file (buffer)
+	EOF                             // end of file (buffer)
+	Err                             // error
+	XmlDecl                         // <?xml version="1.0" encoding="UTF-8"?>
+	Tag                             // <identifier
+	CloseEmptyTag                   // />
+	BeginContent                    // >
+	EndContent                      // </identifier>
+	Attrib                          // identifier="qstring" or identifier='qstring'
+	SData                           // content string data
+	CData                           // cdata tag content
+	Comment                         // <!-- comment -->
+	PI                              // <?name value?>
 )
 
 func (t TokenKind) String() string {
 	switch t {
-	case startOfFile:
+	case sof:
 		return "SOF"
-	case Done:
+	case EOF:
 		return "EOF"
 	case XmlDecl:
 		return "XmlDecl"
-	case OpenTag:
-		return "OpenTag"
-	case StartContent:
-		return "StartContent"
+	case Tag:
+		return "Tag"
+	case BeginContent:
+		return "BeginContent"
 	case EndContent:
 		return "EndContent"
 	case CloseEmptyTag:
@@ -151,46 +151,46 @@ func (t *Token) IsError() bool {
 }
 
 func (t *Token) IsDone() bool {
-	return t.Kind == Done
+	return t.Kind == EOF
 }
 
-type tokenizerState int
+type state int
 
 const (
-	tsStart = tokenizerState(iota)
-	tsProlog
-	tsAttribs
-	tsContent
-	tsEpilog
+	stateStart = state(iota)
+	stateProlog
+	stateAttribs
+	stateContent
+	stateEpilog
 )
 
 type tokenizer struct {
 	buf   string
 	cur   int
-	state tokenizerState
+	state state
 	stack []NameString
 }
 
 func (tt *tokenizer) Next() *Token {
-	tokenWhiteStart := tt.cur
-	if tt.state != tsContent {
+	whiteStart := tt.cur
+	if tt.state != stateContent {
 		tt.skipWhite()
 	}
-	tokenSrcPos := tt.cur
-	tokenAtEOF := tt.cur == len(tt.buf)
+	rawStart := tt.cur
+	atEOF := tt.cur == len(tt.buf)
 
 	mkerr := func(ec ErrCode) *Token {
-		if ec == ErrCodeUnexpectedContent && tokenAtEOF {
+		if ec == ErrCodeUnexpectedContent && atEOF {
 			ec = ErrCodeUnexpectedEOF
 		}
 		return &Token{
 			Kind:        Err,
-			Error:       NewError(ec, tt.buf, tokenSrcPos),
+			Error:       NewError(ec, tt.buf, rawStart),
 			Name:        "",
 			Value:       "",
-			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
-			Raw:         tt.buf[tokenSrcPos:tt.cur],
-			SrcPos:      tokenSrcPos,
+			WhitePrefix: tt.buf[whiteStart:rawStart],
+			Raw:         tt.buf[rawStart:tt.cur],
+			SrcPos:      rawStart,
 		}
 	}
 
@@ -200,15 +200,15 @@ func (tt *tokenizer) Next() *Token {
 			Error:       nil,
 			Name:        n,
 			Value:       v,
-			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
-			Raw:         tt.buf[tokenSrcPos:tt.cur],
-			SrcPos:      tokenSrcPos,
+			WhitePrefix: tt.buf[whiteStart:rawStart],
+			Raw:         tt.buf[rawStart:tt.cur],
+			SrcPos:      rawStart,
 		}
 	}
 
-	if tokenAtEOF {
-		if tt.state == tsEpilog {
-			return mktoken(Done, "", "")
+	if atEOF {
+		if tt.state == stateEpilog {
+			return mktoken(EOF, "", "")
 		}
 		return mkerr(ErrCodeUnexpectedEOF)
 	}
@@ -247,21 +247,21 @@ func (tt *tokenizer) Next() *Token {
 		return
 	}
 
-	if tt.state == tsAttribs {
+	if tt.state == stateAttribs {
 		if tt.skipStr("/>") {
 			if len(tt.stack) > 0 {
 				tt.stack = tt.stack[:len(tt.stack)-1]
 			}
 			if len(tt.stack) == 0 {
-				tt.state = tsEpilog
+				tt.state = stateEpilog
 			} else {
-				tt.state = tsContent
+				tt.state = stateContent
 			}
 			return mktoken(CloseEmptyTag, "", "")
 		}
 		if tt.skipByte('>') {
-			tt.state = tsContent
-			return mktoken(StartContent, "", "")
+			tt.state = stateContent
+			return mktoken(BeginContent, "", "")
 		}
 		n, v, e := readAttrPair()
 		if e != ErrCodeOk {
@@ -270,7 +270,7 @@ func (tt *tokenizer) Next() *Token {
 		return mktoken(Attrib, n, v)
 	}
 
-	if tt.state == tsStart {
+	if tt.state == stateStart {
 		// bom
 		if tt.skipStr("\xef\xbb\xbf") {
 			tt.skipWhite()
@@ -295,10 +295,10 @@ func (tt *tokenizer) Next() *Token {
 			if !tt.skipStr("?>") {
 				return mkerr(ErrCodeInvalidXmlDecl)
 			}
-			tt.state = tsProlog
+			tt.state = stateProlog
 			return mktoken(XmlDecl, "", v)
 		}
-		tt.state = tsProlog
+		tt.state = stateProlog
 	}
 
 	if tt.skipStr("<!--") {
@@ -331,7 +331,7 @@ func (tt *tokenizer) Next() *Token {
 		return mktoken(PI, name, RawString(tt.buf[o:tt.cur-2]))
 	}
 
-	if tt.state == tsProlog {
+	if tt.state == stateProlog {
 		if !tt.skipByte('<') {
 			return mkerr(ErrCodeUnexpectedContent)
 		}
@@ -345,16 +345,16 @@ func (tt *tokenizer) Next() *Token {
 			return mkerr(ErrCodeUnexpectedContent)
 		}
 		tt.stack = append(tt.stack, n)
-		tt.state = tsAttribs
-		return mktoken(OpenTag, n, "")
+		tt.state = stateAttribs
+		return mktoken(Tag, n, "")
 	}
 
-	if tt.state == tsEpilog {
+	if tt.state == stateEpilog {
 
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 
-	if tt.state != tsContent {
+	if tt.state != stateContent {
 		panic("internal parser error: unexpected state")
 	}
 	n := strings.IndexByte(tt.buf[tt.cur:], '<')
@@ -396,9 +396,9 @@ func (tt *tokenizer) Next() *Token {
 			return mkerr(ErrCodeUnexpectedContent)
 		}
 		if len(tt.stack) == 0 {
-			tt.state = tsEpilog
+			tt.state = stateEpilog
 		} else {
-			tt.state = tsContent
+			tt.state = stateContent
 		}
 		return mktoken(EndContent, cname, "")
 	}
@@ -407,8 +407,8 @@ func (tt *tokenizer) Next() *Token {
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 	tt.stack = append(tt.stack, oname)
-	tt.state = tsAttribs
-	return mktoken(OpenTag, oname, "")
+	tt.state = stateAttribs
+	return mktoken(Tag, oname, "")
 }
 
 func (tt *tokenizer) readName() NameString {

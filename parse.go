@@ -6,7 +6,7 @@ func ParseTokens(buf string, ontoken func(t *Token) error) error {
 	tt := tokenizer{buf: buf}
 	t := tt.Next()
 	for {
-		if t.Kind == Done {
+		if t.Kind == EOF {
 			return nil
 		} else if t.Kind == Err {
 			return t.Error
@@ -49,7 +49,7 @@ func (ci *ContentIterator) Next() bool {
 		panic("outer content is locked while handling child tags")
 	}
 
-	if ci.t != nil && ci.t.Kind == OpenTag {
+	if ci.t != nil && ci.t.Kind == Tag {
 		skipTag(ci.tt)
 	}
 
@@ -63,9 +63,9 @@ func (ci *ContentIterator) Next() bool {
 		ci.t = nil
 		ci.finished = true
 		return false
-	case Done:
+	case EOF:
 		return false
-	case XmlDecl, OpenTag, SData, CData, Comment, PI:
+	case XmlDecl, Tag, SData, CData, Comment, PI:
 		return true
 	default:
 		ci.t = nil
@@ -114,7 +114,7 @@ func (ci *ContentIterator) IsXmlDecl() bool {
 	return ci.t != nil && ci.t.Kind == XmlDecl
 }
 func (ci *ContentIterator) IsTag() bool {
-	return ci.t != nil && ci.t.Kind == OpenTag
+	return ci.t != nil && ci.t.Kind == Tag
 }
 func (ci *ContentIterator) IsSData() bool {
 	return ci.t != nil && ci.t.Kind == SData
@@ -129,7 +129,7 @@ func (ci *ContentIterator) IsPI() bool {
 	return ci.t != nil && ci.t.Kind == PI
 }
 func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content *ContentIterator) error) {
-	if ci == nil || ci.t == nil || ci.t.Kind != OpenTag {
+	if ci == nil || ci.t == nil || ci.t.Kind != Tag {
 		return
 	}
 
@@ -169,7 +169,7 @@ func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content 
 	ci.locked = true // make sure nobody calls ci.Next() while handling our content
 	defer func() { ci.locked = false; ci.t = nil }()
 
-	if t.Kind == StartContent {
+	if t.Kind == BeginContent {
 		content := &ContentIterator{tt: ci.tt}
 		err := callback(attrs, content)
 		if err != nil {
@@ -182,13 +182,13 @@ func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content 
 		for {
 			t = ci.tt.Next()
 			switch t.Kind {
-			case EndContent, Done:
+			case EndContent, EOF:
 				ci.finished = true
 				return
 			case Err:
 				ci.err = t.Error
 				return
-			case OpenTag:
+			case Tag:
 				err := skipTag(ci.tt)
 				if err != nil {
 					ci.err = t.Error
@@ -215,7 +215,7 @@ func (ci *ContentIterator) HandleTag(callback func(attrs AttributeList, content 
 // This is useful for parsing <tag>string-content</tag> nodes
 //
 func (ci *ContentIterator) ChildStringContent() RawString {
-	if ci == nil || ci.t == nil || ci.t.Kind != OpenTag {
+	if ci == nil || ci.t == nil || ci.t.Kind != Tag {
 		return ""
 	}
 	if ci.locked {
@@ -234,7 +234,7 @@ func (ci *ContentIterator) ChildStringContent() RawString {
 	if t.Kind == CloseEmptyTag {
 		return ""
 	}
-	if t.Kind == StartContent {
+	if t.Kind == BeginContent {
 		t = ci.tt.Next()
 		if t.Kind == SData {
 			ret := t.Value
@@ -248,13 +248,13 @@ func (ci *ContentIterator) ChildStringContent() RawString {
 		for {
 			t = ci.tt.Next()
 			switch t.Kind {
-			case EndContent, Done:
+			case EndContent, EOF:
 				ci.t = nil
 				return ""
 			case Err:
 				ci.err = t.Error
 				return ""
-			case OpenTag:
+			case Tag:
 				err := skipTag(ci.tt)
 				if err != nil {
 					ci.err = t.Error
@@ -288,15 +288,15 @@ func skipTag(tt *tokenizer) error {
 	if t.Kind == CloseEmptyTag {
 		return nil
 	}
-	if t.Kind == StartContent {
+	if t.Kind == BeginContent {
 		for {
 			t = tt.Next()
 			switch t.Kind {
-			case EndContent, Done:
+			case EndContent, EOF:
 				return nil
 			case Err:
 				return t.Error
-			case OpenTag:
+			case Tag:
 				err := skipTag(tt)
 				if err != nil {
 					return err
