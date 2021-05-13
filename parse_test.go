@@ -3,16 +3,17 @@ package xg
 import (
 	"fmt"
 	"log"
+	"strings"
 	"testing"
 )
 
 func TestParse(t *testing.T) {
-	ShowTokens(example2)
-	//ParseExample()
+	//ShowTokens(example2)
+	ParseExample(example2)
 }
 
 func ShowTokens(buf string) {
-	err := ParseFlat(buf, func(t *Token) error {
+	err := ParseTokens(buf, func(t *Token) error {
 		switch t.Kind {
 		case Done:
 			fmt.Printf("\n[EOF]\n")
@@ -23,11 +24,11 @@ func ShowTokens(buf string) {
 			fmt.Printf("XMLDECL[%s]", t.Raw)
 		case OpenTag:
 			fmt.Printf("%s<TAG:%s", t.WhitePrefix, t.Name)
-		case ChildrenToken:
+		case StartContent:
 			fmt.Printf("[")
 		case CloseEmptyTag:
 			fmt.Printf(">")
-		case CloseTag:
+		case EndContent:
 			fmt.Printf("]>")
 		case Attrib:
 			fmt.Printf(" %s=%s", t.Name, t.Value)
@@ -48,43 +49,53 @@ func ShowTokens(buf string) {
 	}
 }
 
-/*
-func ParseExample() {
-	Parse(exampleXML, tagPrinter)
+func ParseExample(buf string) {
+	err := Parse(example2, tagPrinter, contentPrinter)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func tagPrinter(t *Token) (ch TokenHandler, err error) {
-	switch t.Kind {
-	case OpenTag:
-		fmt.Printf("<%s", t.Name)
-		return tagPrinter, nil
-		case
-	}
-
-	fmt.Printf("<%s", tag)
-	h := TagHandler{}
-	h.OnAttr = func(n NameString, v RawString, raw string) error {
-		//fmt.Printf(" %s=%s", n, v)
-		fmt.Printf("%s", raw)
-		return nil
-	}
-	h.OnStartContent = func(raw string) error {
-		fmt.Printf(">")
-		return nil
-	}
-	h.OnChildSD = func(v RawString, raw string) error {
-		fmt.Printf("%s", v)
-		return nil
-	}
-	h.OnChildTag = tagPrinter
-	h.OnClose = func(empty bool, raw string) error {
-		fmt.Printf("%s", raw)
-		return nil
-	}
-
-	return h, nil
+func contentPrinter(t *Token) error {
+	fmt.Printf("%s%s", t.WhitePrefix, t.Raw)
+	return nil
 }
-*/
+
+func tagPrinter(tag *Token, attrs AttributeList, content *ContentIterator) error {
+	n := strings.ToUpper(string(tag.Name))
+	fmt.Printf("<%s", n)
+	for _, a := range attrs {
+		fmt.Printf(" %s=%q", a.Name, a.Value.Unscrambled())
+	}
+	if content == nil {
+		fmt.Printf("/>")
+		return nil
+	}
+
+	fmt.Printf(">")
+	for content.Next() {
+		switch content.Kind() {
+		case XmlDecl:
+			fmt.Printf(`<?xml version="1.0" encoding="UTF-8"?>`)
+		case OpenTag:
+			fmt.Printf("<%s ... />", content.Name())
+		case SData:
+			fmt.Printf("%s", content.Value())
+		case CData:
+			fmt.Printf("<![CDATA[%s]]>", content.Value())
+		case Comment:
+			fmt.Printf("<!--%s-->", content.Value())
+		case PI:
+			fmt.Printf("<?%s %s?>", content.Name(), content.Value())
+		default:
+			fmt.Printf("<unknown>")
+		}
+	}
+
+	fmt.Printf("</%s>", n)
+
+	return nil
+}
 
 const example1 = `<?xml version="1.0" encoding="UTF-8"?>
 <!--comment-->

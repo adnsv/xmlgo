@@ -87,9 +87,9 @@ const (
 	Err
 	XmlDecl
 	OpenTag       // <identifier
-	ChildrenToken // >
+	StartContent  // >
 	CloseEmptyTag // />
-	CloseTag      // </identifier>
+	EndContent    // </identifier>
 	Attrib        // identifier="qstring" or identifier='qstring'
 	SData         // content string data
 	CData         // cdata tag content
@@ -230,7 +230,7 @@ func (tt *tokenizer) Next() *Token {
 		}
 		if tt.skipByte('>') {
 			tt.state = tsContent
-			return mktoken(ChildrenToken, "", "")
+			return mktoken(StartContent, "", "")
 		}
 		n, v, e := readAttrPair()
 		if e != ErrCodeOk {
@@ -319,6 +319,7 @@ func (tt *tokenizer) Next() *Token {
 	}
 
 	if tt.state == tsEpilog {
+
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 
@@ -368,7 +369,7 @@ func (tt *tokenizer) Next() *Token {
 		} else {
 			tt.state = tsContent
 		}
-		return mktoken(CloseTag, cname, "")
+		return mktoken(EndContent, cname, "")
 	}
 	oname := tt.readName()
 	if len(oname) == 0 {
