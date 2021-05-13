@@ -183,6 +183,7 @@ func (ci *Content) HandleTag(callback func(attrs AttributeList, content *Content
 	if t.Kind == CloseEmptyTag {
 		ci.t = nil
 		ci.err = callback(attrs, nil)
+		return
 	}
 
 	ci.locked = true // make sure nobody calls ci.Next() while handling our content
