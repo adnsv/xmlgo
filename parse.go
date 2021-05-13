@@ -1,33 +1,32 @@
 package xg
 
-import "fmt"
-
 type FlatHandler func(t *Token) error
 type TokenHandler func(t *Token) (TokenHandler, error)
 
-func mkerr(ec ErrCode) error {
+/*func mkerr(ec ErrCode) error {
 	return fmt.Errorf("xml syntax error: %s", ec)
-}
+}*/
 
-func ParseFlat(buf string, h FlatHandler) (err error) {
+func ParseFlat(buf string, h FlatHandler) error {
 	tt := tokenizer{buf: buf}
 	t := tt.Next()
 	for {
 		if t.Kind == Done {
-			return
+			return nil
 		} else if t.Kind == Err {
-			return mkerr(t.EC)
+			return t.Error
 		}
 		if h != nil {
-			err = h(t)
+			err := h(t)
 			if err != nil {
-				return
+				return nil
 			}
 		}
 		t = tt.Next()
 	}
-	return
 }
+
+/*
 
 func Parse(buf string, h TokenHandler) (err error) {
 	tt := &tokenizer{buf: buf}
@@ -125,3 +124,4 @@ func handleTag(tt *tokenizer, t *Token, ontag TagHandlerProc) error {
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 }
+*/

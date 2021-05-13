@@ -1,6 +1,9 @@
 package xg
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type ErrCode int
 
@@ -21,6 +24,7 @@ const (
 	ErrCodeMissingRoot
 	ErrUnterminatedComment
 	ErrInvalidComment
+	ErrUnterminatedPI
 )
 
 var ecstr = map[ErrCode]string{
@@ -40,6 +44,7 @@ var ecstr = map[ErrCode]string{
 	ErrCodeMissingRoot:        "missing root",
 	ErrUnterminatedComment:    "unterminated comment",
 	ErrInvalidComment:         "invalid comment",
+	ErrUnterminatedPI:         "unterminated processing instruction",
 }
 
 func (ec ErrCode) String() string {
@@ -57,6 +62,23 @@ func (ec ErrCode) Failed() bool {
 	return ec != ErrCodeOk
 }
 
+type errImpl struct {
+	ec     ErrCode
+	offset int // offset within the original buffer
+	line   int
+	pos    int
+}
+
+func (e *errImpl) Error() string {
+	return fmt.Sprintf("xml parser [%d:%d]: %s", e.line+1, e.pos+1, e.ec)
+}
+
+func NewError(ec ErrCode, buf string, offset int) error {
+	ret := &errImpl{ec: ec, offset: offset}
+	ret.line, ret.pos = CalcLocation(buf, offset)
+	return ret
+}
+
 type TokenKind int
 
 const (
@@ -72,6 +94,7 @@ const (
 	SData         // content string data
 	CData         // cdata tag content
 	Comment       // <!-- comment -->
+	PI            // <?name value?>
 )
 
 type NameString string
@@ -84,7 +107,7 @@ func (rs RawString) Unscrambled() string {
 
 type Token struct {
 	Kind        TokenKind
-	EC          ErrCode
+	Error       error
 	Name        NameString
 	Value       RawString
 	WhitePrefix string
@@ -131,6 +154,7 @@ func (tt *tokenizer) Next() *Token {
 		}
 		return &Token{
 			Kind:        Err,
+			Error:       NewError(ec, tt.buf, tokenSrcPos),
 			Name:        "",
 			Value:       "",
 			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
@@ -142,6 +166,7 @@ func (tt *tokenizer) Next() *Token {
 	mktoken := func(k TokenKind, n NameString, v RawString) *Token {
 		return &Token{
 			Kind:        k,
+			Error:       nil,
 			Name:        n,
 			Value:       v,
 			WhitePrefix: tt.buf[tokenWhiteStart:tokenSrcPos],
@@ -214,37 +239,6 @@ func (tt *tokenizer) Next() *Token {
 		return mktoken(Attrib, n, v)
 	}
 
-	handleComment := func() (iscomment bool, tk *Token, ec ErrCode) {
-		if tt.cur+7 > len(tt.buf) {
-			return
-		}
-		if !tt.skipStr("<!--") {
-			return
-		}
-		o := tt.cur
-		iscomment = true
-		n := strings.Index(tt.buf[tt.cur:], "--")
-		if n < 0 {
-			ec = ErrUnterminatedComment
-			return
-		}
-		tt.cur += n + 2
-		if !tt.skipByte('>') {
-			ec = ErrInvalidComment
-			return
-		}
-		tk = mktoken(Comment, "", RawString(tt.buf[o:tt.cur-3]))
-		return
-	}
-
-	iscomment, tk, ec := handleComment()
-	if iscomment {
-		if tk == nil {
-			return mkerr(ec)
-		}
-		return tk
-	}
-
 	if tt.state == tsStart {
 		// bom
 		if tt.skipStr("\xef\xbb\xbf") {
@@ -276,13 +270,39 @@ func (tt *tokenizer) Next() *Token {
 		tt.state = tsProlog
 	}
 
+	if tt.skipStr("<!--") {
+		// comment
+		o := tt.cur
+		n := strings.Index(tt.buf[tt.cur:], "--")
+		if n < 0 {
+			return mkerr(ErrUnterminatedComment)
+		}
+		tt.cur += n + 2
+		if !tt.skipByte('>') {
+			return mkerr(ErrInvalidComment)
+		}
+		return mktoken(Comment, "", RawString(tt.buf[o:tt.cur-3]))
+	}
+
+	if tt.skipStr("<?") {
+		// processing instruction
+		name := tt.readName()
+		if len(name) == 0 {
+			return mkerr(ErrCodeUnexpectedContent)
+		}
+		tt.skipWhite()
+		o := tt.cur
+		n := strings.Index(tt.buf[tt.cur:], "?>")
+		if n < 0 {
+			return mkerr(ErrUnterminatedPI)
+		}
+		tt.cur += n + 2
+		return mktoken(PI, "", RawString(tt.buf[o:tt.cur-2]))
+	}
+
 	if tt.state == tsProlog {
 		if !tt.skipByte('<') {
 			return mkerr(ErrCodeUnexpectedContent)
-		}
-		if tt.skipByte('?') {
-			// todo: implement PI parsing or skipping
-			return mkerr(ErrCodeUnsupportedFeature)
 		}
 		if tt.skipStr("!DOCTYPE") {
 			// todo: implement doctype parsing or skipping
@@ -299,9 +319,6 @@ func (tt *tokenizer) Next() *Token {
 	}
 
 	if tt.state == tsEpilog {
-		if tt.skipStr("<?") {
-			return mkerr(ErrCodeUnsupportedFeature)
-		}
 		return mkerr(ErrCodeUnexpectedContent)
 	}
 
@@ -319,9 +336,6 @@ func (tt *tokenizer) Next() *Token {
 	}
 
 	tt.cur++ // skip over the '<'
-	if tt.skipByte('?') {
-		return mkerr(ErrCodeUnsupportedFeature)
-	}
 	if tt.skipStr("![CDATA[") {
 		n := strings.Index(tt.buf[tt.cur:], "]]>")
 		if n < 0 {

@@ -7,8 +7,8 @@ import (
 )
 
 func TestParse(t *testing.T) {
-	ShowTokens(exampleXML)
-	ParseExample()
+	ShowTokens(example2)
+	//ParseExample()
 }
 
 func ShowTokens(buf string) {
@@ -18,8 +18,7 @@ func ShowTokens(buf string) {
 			fmt.Printf("\n[EOF]\n")
 			return nil
 		case Err:
-			fmt.Printf("\nERR: %s\n", t.EC.String())
-			return e
+			return t.Error
 		case XmlDecl:
 			fmt.Printf("XMLDECL[%s]", t.Raw)
 		case OpenTag:
@@ -38,14 +37,18 @@ func ShowTokens(buf string) {
 			fmt.Printf("<CDATA:[%s]>", t.Value)
 		case Comment:
 			fmt.Printf("%s<COMMENT:%s>", t.WhitePrefix, t.Value)
+		case PI:
+			fmt.Printf("%s<PI:%s>", t.WhitePrefix, t.Value)
 		}
 		return nil
 	})
+	fmt.Printf("\n")
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
+/*
 func ParseExample() {
 	Parse(exampleXML, tagPrinter)
 }
@@ -55,7 +58,7 @@ func tagPrinter(t *Token) (ch TokenHandler, err error) {
 	case OpenTag:
 		fmt.Printf("<%s", t.Name)
 		return tagPrinter, nil
-		case 
+		case
 	}
 
 	fmt.Printf("<%s", tag)
@@ -81,8 +84,9 @@ func tagPrinter(t *Token) (ch TokenHandler, err error) {
 
 	return h, nil
 }
+*/
 
-const exampleXML = `<?xml version="1.0" encoding="UTF-8"?>
+const example1 = `<?xml version="1.0" encoding="UTF-8"?>
 <!--comment-->
 <root attr="val" attr2='val2'>
   <Reason>
@@ -144,4 +148,17 @@ const exampleXML = `<?xml version="1.0" encoding="UTF-8"?>
     <type>1</type>
   </Category>
 </root>
+`
+const example2 = `<?xml version="1.0" encoding="UTF-8"?>
+<DocumentElement param="value">
+	<!-- comment -->
+	<FirstElement>
+		&#xb6; Some Text
+	</FirstElement>
+	<?some_pi some_attr="some_value"?>
+	<SecondElement param2="something">
+		Pre-Text <Inline>Inlined text</Inline> Post-text.
+	</SecondElement>
+</DocumentElement>
+<?another_pi some_attr="some_value"?>
 `
