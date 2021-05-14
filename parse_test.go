@@ -8,7 +8,7 @@ import (
 
 func TestParse(t *testing.T) {
 	//ShowTokens(example2)
-	ParseExample(example03)
+	ParseExample(example01)
 }
 
 func ParseExample(buf string) {
@@ -103,68 +103,28 @@ func ShowTokens(buf string) {
 	}
 }
 
-const example01 = `<?xml version="1.0" encoding="UTF-8"?>
-<!--comment-->
-<root attr="val" attr2='val2'>
-  <Reason>
-    <id>1</id>
-    <caption>Visual</caption>
-    <type>1</type>
-    <created>2019-04-09 14:18:21</created>
-    <deleted>0</deleted>
-    <position>1</position>
-    <uid>5cace1ed-16b4-4598-b594-430bdc0e4b59</uid>
-  </Reason>
-  <Reason>
-    <id>1</id>
-    <unknown>blah</unknown>
-    <caption>Another Reason</caption>
-    <type>1</type>
-    <created>2019-04-09 14:18:21</created>
-    <deleted>0</deleted>
-    <position>1</position>
-    <uid>5cace1ed-16b4-4598-b594-430bdc0e4b59</uid>
-  </Reason>
-  <User>
-    <id>1</id>
-    <uid>d9d0d6a7-a8e2-4477-bb62-067f4152d1ff</uid>
-    <name>admin</name>
-    <image_index>1</image_index>
-    <created>2019-04-09 09:40:53</created>
-    <modified>2019-04-12 12:32:09</modified>
-    <deleted>0</deleted>
-    <login>admin</login>
-    <pwd_hash_public>$2y$09$3UYSx/bJ5JX5L1EQjD2PuON8XFKowbMSbcP/j/VuJTkLVfnlrnWQW</pwd_hash_public>
-    <pwd_hash_private>$2y$09$pK53BkSOitk95N3wWxg1kO</pwd_hash_private>
-    <Ugroup>
-      <id>3</id>
-      <UgroupsUser>
-        <id>1</id>
-        <user_id>1</user_id>
-        <ugroup_id>3</ugroup_id>
-      </UgroupsUser>
-    </Ugroup>
-  </User>
-  <Ugroup>
-    <id>1</id>
-    <name>standard</name>
-    <sort_order>1</sort_order>
-  </Ugroup>
-  <Category>
-    <id>1</id>
-    <uid>c233cc1e-a00b-4b92-93d3-520c613ecd4a</uid>
-    <name>Delta</name>
-    <color>FF4040</color>
-    <type>1</type>
-  </Category>
-  <Category>
-    <id>2</id>
-    <uid>5cacbb17-5c4c-4ead-8207-d198dc0e4b59</uid>
-    <name>3T</name>
-    <color>40F040</color>
-    <type>1</type>
-  </Category>
-</root>
+const example01 = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 25.2.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="375.6px" height="233.2px" viewBox="0 0 375.6 233.2" style="enable-background:new 0 0 375.6 233.2;" xml:space="preserve"
+	>
+<style type="text/css">
+	.st0{fill:none;stroke:#000000;stroke-width:0.5;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:10;}
+	.st1{fill:none;stroke:#000000;stroke-width:0.25;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:10;}
+	.st2{fill:#304499;stroke:#FFFFFF;stroke-width:0.5;stroke-miterlimit:10;}
+	.st3{fill:#FFFFFF;stroke:#304499;stroke-width:0.3502;stroke-miterlimit:10;}
+	.st4{fill:#010101;}
+	.st5{font-family:'ArialMT';}
+	.st6{font-size:8px;}
+</style>
+<path class="st0" d="M325.7,53.3c0.7-2.8,2.6-4.9,5.2-5.4"/>
+<line class="st0" x1="317.1" y1="137.6" x2="341" y2="72.6"/>
+<path class="st0" d="M327.3,153.5c0.2-0.5,0.1-1-0.2-1.5"/>
+<line class="st0" x1="53.6" y1="168.3" x2="51.9" y2="168"/>
+<path class="st1" d="M105,12.3c1.2,1.9,1.4,4.1,0.6,6.1"/>
+<line class="st1" x1="18.6" y1="179.9" x2="27.6" y2="191.9"/>
+<text transform="matrix(1 0 0 1 349.3292 195.6429)" class="st4 st5 st6">2</text>
+</svg>
 `
 const example02 = `<?xml version="1.0" encoding="UTF-8"?>
 <DocumentElement param="value">

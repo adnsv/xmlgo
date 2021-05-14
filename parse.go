@@ -52,7 +52,7 @@ func (ci *Content) Err() error {
 	return ci.err
 }
 
-func (ci *Content) Next() bool {
+func (ci *Content) Next() (ok bool) {
 	if ci == nil || ci.finished || ci.err != nil {
 		return false
 	}
@@ -66,6 +66,7 @@ func (ci *Content) Next() bool {
 	}
 
 	ci.t = ci.tt.Next()
+
 	switch ci.t.Kind {
 	case Err:
 		ci.err = ci.t.Error
@@ -81,6 +82,7 @@ func (ci *Content) Next() bool {
 		return true
 	default:
 		ci.t = nil
+		return false
 	}
 	// we should not end up being here
 	panic("unexpected token " + ci.t.Kind.String())
@@ -165,7 +167,6 @@ func (ci *Content) HandleTag(callback func(attrs AttributeList, content *Content
 	// collect attributes
 	var t *Token
 	attrs := AttributeList{}
-	// collect attributes
 	for {
 		t = ci.tt.Next()
 		if t.Kind == Attrib {
@@ -199,11 +200,11 @@ func (ci *Content) HandleTag(callback func(attrs AttributeList, content *Content
 		if content.finished {
 			return
 		}
+
 		for {
 			t = ci.tt.Next()
 			switch t.Kind {
-			case EndContent, EOF:
-				ci.finished = true
+			case EndContent:
 				return
 			case Err:
 				ci.err = t.Error
